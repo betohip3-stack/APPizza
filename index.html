@@ -817,67 +817,83 @@
         wrap.style.display = 'flex';
     }
 
-    window.finalizarPedido = async function() {
-        const clienteId = document.getElementById('selectCliente').value;
-        if (!clienteId) { toast('Selecione um cliente antes de finalizar.', 'warning'); return; }
-        if (carrinhoAtual.length === 0) { toast('Adicione ao menos uma pizza ao pedido.', 'warning'); return; }
+   window.finalizarPedido = async function() {
+    const clienteId = document.getElementById('selectCliente').value;
+    if (!clienteId) { toast('Selecione um cliente antes de finalizar.', 'warning'); return; }
+    if (carrinhoAtual.length === 0) { toast('Adicione ao menos uma pizza ao pedido.', 'warning'); return; }
 
-        try {
-            let observacoesPedido = [];
+    try {
+        // A transação agora retorna a lista de observações gerada
+        const observacoesPedido = await runTransaction(db, async (transaction) => {
+            const obsLocais = [];
 
-           await runTransaction(db, async (transaction) => {
-    for (const item of carrinhoAtual) {
-        const pizzaRef = doc(db, "pizzas", item.pizzaId);
-        const pizzaDoc = await transaction.get(pizzaRef);
-        
-        if (!pizzaDoc.exists()) {
-            throw `Pizza "${item.sabor}" não foi encontrada no cadastro!`;
-        }
-
-        const estoqueAtual = pizzaDoc.data().estoque || 0;
-        
-        // Se a quantidade for maior que o estoque (ou estoque igual a 0)
-        if (estoqueAtual < item.qtd) {
-            const faltam = item.qtd - estoqueAtual;
-            observacoesPedido.push(`Faltam ${faltam} un. de ${item.sabor} no estoque.`);
-            // Zera o estoque para não ficar negativo
-            transaction.update(pizzaRef, { estoque: 0 });
-        } else {
-            // Abate a quantidade normalmente
-            transaction.update(pizzaRef, { estoque: estoqueAtual - item.qtd });
-        }
-    }
-
-    const agora = new Date();
-    const novoPedidoRef = doc(collection(db, "pedidos"));
-    
-    // Grava o pedido no banco independentemente do estoque
-    transaction.set(novoPedidoRef, {
-        clienteId,
-        itens: [...carrinhoAtual],
-        valorTotal: carrinhoAtual.reduce((s,i) => s + i.subtotal, 0),
-        status: 'Pendente',
-        observacao: observacoesPedido.length > 0 ? observacoesPedido.join(' | ') : '',
-        data: agora.toISOString().split('T')[0],
-        hora: agora.toTimeString().slice(0,5),
-        timestamp: Date.now()
-    });
-});
-            carrinhoAtual = [];
-            document.getElementById('selectCliente').value = '';
-            document.getElementById('buscaCliente').value = '';
-            renderizarCarrinho();
-
-            if (observacoesPedido.length > 0) {
-                toast('Pedido registrado com alerta de estoque zerado/insuficiente!', 'warning');
-            } else {
-                toast('Pedido registrado com sucesso!');
+            // 1. Ler os dados atualizados de TODAS as pizzas do carrinho na transação
+            const leiturasPizzas = [];
+            for (const item of carrinhoAtual) {
+                const pizzaRef = doc(db, "pizzas", item.pizzaId);
+                const pizzaDoc = await transaction.get(pizzaRef);
+                
+                if (!pizzaDoc.exists()) {
+                    throw `Pizza "${item.sabor}" não foi encontrada no banco!`;
+                }
+                
+                leiturasPizzas.push({
+                    ref: pizzaRef,
+                    itemCarrinho: item,
+                    estoqueBanco: Number(pizzaDoc.data().estoque) || 0
+                });
             }
-        } catch (err) {
-            toast(typeof err === 'string' ? err : 'Erro ao finalizar o pedido.', 'danger');
-        }
-    };
 
+            // 2. Processar o abatimento de estoque para CADA item do carrinho
+            for (const registro of leiturasPizzas) {
+                const { ref, itemCarrinho, estoqueBanco } = registro;
+
+                if (estoqueBanco < itemCarrinho.qtd) {
+                    const faltam = itemCarrinho.qtd - estoqueBanco;
+                    obsLocais.push(`Faltam ${faltam} un. de ${itemCarrinho.sabor} no estoque.`);
+                    
+                    // Zera o estoque da pizza em falta
+                    transaction.update(ref, { estoque: 0 });
+                } else {
+                    // Abate a quantidade normalmente
+                    transaction.update(ref, { estoque: estoqueBanco - itemCarrinho.qtd });
+                }
+            }
+
+            // 3. Criar o pedido com todos os alertas consolidados
+            const agora = new Date();
+            const novoPedidoRef = doc(collection(db, "pedidos"));
+            
+            transaction.set(novoPedidoRef, {
+                clienteId,
+                itens: [...carrinhoAtual],
+                valorTotal: carrinhoAtual.reduce((s, i) => s + i.subtotal, 0),
+                status: 'Pendente',
+                observacao: obsLocais.length > 0 ? obsLocais.join(' | ') : '',
+                data: agora.toISOString().split('T')[0],
+                hora: agora.toTimeString().slice(0, 5),
+                timestamp: Date.now()
+            });
+
+            return obsLocais;
+        });
+
+        // Limpa o carrinho após gravação bem-sucedida
+        carrinhoAtual = [];
+        document.getElementById('selectCliente').value = '';
+        document.getElementById('buscaCliente').value = '';
+        renderizarCarrinho();
+
+        if (observacoesPedido.length > 0) {
+            toast(`Pedido registrado! Alerta: ${observacoesPedido.length} sabor(es) sem estoque suficiente.`, 'warning');
+        } else {
+            toast('Pedido registrado com sucesso!');
+        }
+    } catch (err) {
+        console.error("Erro ao finalizar pedido:", err);
+        toast(typeof err === 'string' ? err : 'Erro ao finalizar o pedido.', 'danger');
+    }
+};
     function renderizarEntregas() {
         const lista = document.getElementById('listaEntregas');
         const pendentes = pedidos.filter(p => p.status === 'Pendente');
