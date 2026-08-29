@@ -753,36 +753,35 @@
 
     /* CARRINHO */
     window.adicionarAoCarrinho = function() {
-        const pizzaId = document.getElementById('selectPizza').value;
-        const qtd = parseInt(document.getElementById('qtdPedido').value);
+    const pizzaId = document.getElementById('selectPizza').value;
+    const qtd = parseInt(document.getElementById('qtdPedido').value);
 
-        if (!pizzaId || isNaN(qtd) || qtd <= 0) { 
-            toast('Selecione uma pizza e quantidade válida.', 'warning'); 
-            return; 
-        }
+    if (!pizzaId || isNaN(qtd) || qtd <= 0) { 
+        toast('Selecione uma pizza e quantidade válida.', 'warning'); 
+        return; 
+    }
 
-        const pizza = pizzas.find(p => p.id === pizzaId);
-        if (!pizza) return;
+    const pizza = pizzas.find(p => p.id === pizzaId);
+    if (!pizza) return;
 
-        const qtdNoCarrinho = carrinhoAtual.filter(i => i.pizzaId === pizzaId).reduce((s,i) => s + i.qtd, 0);
+    const existente = carrinhoAtual.find(i => i.pizzaId === pizzaId);
+    if (existente) {
+        existente.qtd += qtd;
+        existente.subtotal = existente.preco * existente.qtd;
+    } else {
+        carrinhoAtual.push({ 
+            pizzaId: pizza.id, 
+            sabor: pizza.sabor, 
+            preco: pizza.preco, 
+            qtd, 
+            subtotal: pizza.preco * qtd 
+        });
+    }
 
-        if (pizza.estoque < qtdNoCarrinho + qtd) { 
-            toast(`Estoque insuficiente! Disponível: ${pizza.estoque - qtdNoCarrinho} un.`, 'danger'); 
-            return; 
-        }
-
-        const existente = carrinhoAtual.find(i => i.pizzaId === pizzaId);
-        if (existente) {
-            existente.qtd += qtd;
-            existente.subtotal = existente.preco * existente.qtd;
-        } else {
-            carrinhoAtual.push({ pizzaId: pizza.id, sabor: pizza.sabor, preco: pizza.preco, qtd, subtotal: pizza.preco * qtd });
-        }
-
-        document.getElementById('selectPizza').value = '';
-        document.getElementById('qtdPedido').value = '1';
-        renderizarCarrinho();
-    };
+    document.getElementById('selectPizza').value = '';
+    document.getElementById('qtdPedido').value = '1';
+    renderizarCarrinho();
+};
 
     window.removerDoCarrinho = function(idx) {
         carrinhoAtual.splice(idx, 1);
@@ -818,7 +817,7 @@
         wrap.style.display = 'flex';
     }
 
-    window.finalizarPedido = async function() {
+window.finalizarPedido = async function() {
     const clienteId = document.getElementById('selectCliente').value;
     if (!clienteId) { toast('Selecione um cliente antes de finalizar.', 'warning'); return; }
     if (carrinhoAtual.length === 0) { toast('Adicione ao menos uma pizza ao pedido.', 'warning'); return; }
@@ -840,7 +839,6 @@
                 if (estoqueAtual < item.qtd) {
                     const faltam = item.qtd - estoqueAtual;
                     observacoesPedido.push(`Faltam ${faltam} un. de ${item.sabor} no estoque.`);
-                    // Deixa o estoque zerado em vez de negativo no banco
                     transaction.update(pizzaRef, { estoque: 0 });
                 } else {
                     transaction.update(pizzaRef, { estoque: estoqueAtual - item.qtd });
@@ -980,12 +978,13 @@ function renderizarEntregas() {
 
     /* RENDERIZAÇÃO */
     function renderizarSelects() {
-        const sp = document.getElementById('selectPizza');
-        sp.innerHTML = '<option value="">Selecione a pizza…</option>';
-        pizzas.filter(p => p.estoque > 0).forEach(p =>
-            sp.innerHTML += `<option value="${p.id}">${p.sabor} — ${p.estoque} em estoque</option>`
-        );
-    }
+    const sp = document.getElementById('selectPizza');
+    sp.innerHTML = '<option value="">Selecione a pizza…</option>';
+    pizzas.forEach(p => {
+        const infoEstoque = p.estoque > 0 ? `${p.estoque} em estoque` : 'Sem estoque';
+        sp.innerHTML += `<option value="${p.id}">${p.sabor} — (${infoEstoque})</option>`;
+    });
+}
 
     function clienteItemHTML(c) {
         const wpp = c.celular ? `<a class="wpp-link" href="https://wa.me/55${c.celular.replace(/\D/g,'')}" target="_blank">
