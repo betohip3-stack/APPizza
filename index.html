@@ -1034,25 +1034,7 @@ function renderizarEntregas() {
         });
     }
 
-    function renderizarEntregas() {
-        const lista = document.getElementById('listaEntregas');
-        const pendentes = pedidos.filter(p => p.status === 'Pendente');
-        lista.innerHTML = '';
-        if (pendentes.length === 0) { lista.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🛵</div>Nenhum pedido pendente</div>'; return; }
-        pendentes.forEach(p => {
-            const cliente = clientes.find(c => c.id === p.clienteId);
-            const nome = cliente ? cliente.nome : 'Cliente removido';
-            const resumo = (p.itens||[]).map(i => `${i.qtd}× ${i.sabor}`).join(', ');
-            const hora = p.hora ? ` · ${p.hora}` : '';
-            lista.innerHTML += `<div class="list-item">
-                <div class="list-item-info">
-                    <div class="list-item-title">${resumo}</div>
-                    <div class="list-item-sub">${nome} · R$ ${formatBRL(p.valorTotal)}${hora}</div>
-                </div>
-                <button class="btn btn-success btn-sm" onclick="concluirEntrega('${p.id}')">Entregue</button>
-            </div>`;
-        });
-    }
+    
 
     function renderizarHistorico() {
         const lista = document.getElementById('historicoEntregas');
