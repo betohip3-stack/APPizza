@@ -819,49 +819,87 @@
     }
 
     window.finalizarPedido = async function() {
-        const clienteId = document.getElementById('selectCliente').value;
-        if (!clienteId) { toast('Selecione um cliente antes de finalizar.', 'warning'); return; }
-        if (carrinhoAtual.length === 0) { toast('Adicione ao menos uma pizza ao pedido.', 'warning'); return; }
+    const clienteId = document.getElementById('selectCliente').value;
+    if (!clienteId) { toast('Selecione um cliente antes de finalizar.', 'warning'); return; }
+    if (carrinhoAtual.length === 0) { toast('Adicione ao menos uma pizza ao pedido.', 'warning'); return; }
 
-        try {
-            await runTransaction(db, async (transaction) => {
-                for (const item of carrinhoAtual) {
-                    const pizzaRef = doc(db, "pizzas", item.pizzaId);
-                    const pizzaDoc = await transaction.get(pizzaRef);
-                    
-                    if (!pizzaDoc.exists()) {
-                        throw `Pizza "${item.sabor}" não foi encontrada!`;
-                    }
-                    const estoqueAtual = pizzaDoc.data().estoque;
-                    if (estoqueAtual < item.qtd) {
-                        throw `Estoque insuficiente para "${item.sabor}".`;
-                    }
-                    transaction.update(pizzaRef, { estoque: estoqueAtual - item.qtd });
+    try {
+        let observacoesPedido = [];
+
+        await runTransaction(db, async (transaction) => {
+            for (const item of carrinhoAtual) {
+                const pizzaRef = doc(db, "pizzas", item.pizzaId);
+                const pizzaDoc = await transaction.get(pizzaRef);
+                
+                if (!pizzaDoc.exists()) {
+                    throw `Pizza "${item.sabor}" não foi encontrada!`;
                 }
 
-                const agora = new Date();
-                const novoPedidoRef = doc(collection(db, "pedidos"));
-                transaction.set(novoPedidoRef, {
-                    clienteId,
-                    itens: [...carrinhoAtual],
-                    valorTotal: carrinhoAtual.reduce((s,i) => s + i.subtotal, 0),
-                    status: 'Pendente',
-                    data: agora.toISOString().split('T')[0],
-                    hora: agora.toTimeString().slice(0,5),
-                    timestamp: Date.now()
-                });
+                const estoqueAtual = pizzaDoc.data().estoque || 0;
+                
+                if (estoqueAtual < item.qtd) {
+                    const faltam = item.qtd - estoqueAtual;
+                    observacoesPedido.push(`Faltam ${faltam} un. de ${item.sabor} no estoque.`);
+                    // Deixa o estoque zerado em vez de negativo no banco
+                    transaction.update(pizzaRef, { estoque: 0 });
+                } else {
+                    transaction.update(pizzaRef, { estoque: estoqueAtual - item.qtd });
+                }
+            }
+
+            const agora = new Date();
+            const novoPedidoRef = doc(collection(db, "pedidos"));
+            
+            transaction.set(novoPedidoRef, {
+                clienteId,
+                itens: [...carrinhoAtual],
+                valorTotal: carrinhoAtual.reduce((s,i) => s + i.subtotal, 0),
+                status: 'Pendente',
+                observacao: observacoesPedido.length > 0 ? observacoesPedido.join(' | ') : '',
+                data: agora.toISOString().split('T')[0],
+                hora: agora.toTimeString().slice(0,5),
+                timestamp: Date.now()
             });
+        });
 
-            carrinhoAtual = [];
-            document.getElementById('selectCliente').value = '';
-            document.getElementById('buscaCliente').value = '';
-            renderizarCarrinho();
+        carrinhoAtual = [];
+        document.getElementById('selectCliente').value = '';
+        document.getElementById('buscaCliente').value = '';
+        renderizarCarrinho();
+
+        if (observacoesPedido.length > 0) {
+            toast('Pedido registrado com alerta de estoque zerado/insuficiente!', 'warning');
+        } else {
             toast('Pedido registrado com sucesso!');
-        } catch (err) {
-            toast(typeof err === 'string' ? err : 'Erro ao finalizar o pedido.', 'danger');
         }
-    };
+    } catch (err) {
+        toast(typeof err === 'string' ? err : 'Erro ao finalizar o pedido.', 'danger');
+    }
+};
 
+function renderizarEntregas() {
+    const lista = document.getElementById('listaEntregas');
+    const pendentes = pedidos.filter(p => p.status === 'Pendente');
+    lista.innerHTML = '';
+    if (pendentes.length === 0) { lista.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🛵</div>Nenhum pedido pendente</div>'; return; }
+    
+    pendentes.forEach(p => {
+        const cliente = clientes.find(c => c.id === p.clienteId);
+        const nome = cliente ? cliente.nome : 'Cliente removido';
+        const resumo = (p.itens||[]).map(i => `${i.qtd}× ${i.sabor}`).join(', ');
+        const hora = p.hora ? ` · ${p.hora}` : '';
+        const obsHTML = p.observacao ? `<div style="color: var(--danger); font-size: 0.76rem; font-weight: 700; margin-top: 3px;">⚠️ ${p.observacao}</div>` : '';
+
+        lista.innerHTML += `<div class="list-item">
+            <div class="list-item-info">
+                <div class="list-item-title">${resumo}</div>
+                <div class="list-item-sub">${nome} · R$ ${formatBRL(p.valorTotal)}${hora}</div>
+                ${obsHTML}
+            </div>
+            <button class="btn btn-success btn-sm" onclick="concluirEntrega('${p.id}')">Entregue</button>
+        </div>`;
+    });
+}
     window.concluirEntrega = async function(pedidoId) {
         try {
             await updateDoc(doc(db, "pedidos", pedidoId), { status: 'Entregue' });
