@@ -825,41 +825,44 @@
         try {
             let observacoesPedido = [];
 
-            await runTransaction(db, async (transaction) => {
-                for (const item of carrinhoAtual) {
-                    const pizzaRef = doc(db, "pizzas", item.pizzaId);
-                    const pizzaDoc = await transaction.get(pizzaRef);
-                    
-                    if (!pizzaDoc.exists()) {
-                        throw `Pizza "${item.sabor}" não foi encontrada!`;
-                    }
+           await runTransaction(db, async (transaction) => {
+    for (const item of carrinhoAtual) {
+        const pizzaRef = doc(db, "pizzas", item.pizzaId);
+        const pizzaDoc = await transaction.get(pizzaRef);
+        
+        if (!pizzaDoc.exists()) {
+            throw `Pizza "${item.sabor}" não foi encontrada no cadastro!`;
+        }
 
-                    const estoqueAtual = pizzaDoc.data().estoque || 0;
-                    
-                    if (estoqueAtual < item.qtd) {
-                        const faltam = item.qtd - estoqueAtual;
-                        observacoesPedido.push(`Faltam ${faltam} un. de ${item.sabor} no estoque.`);
-                        transaction.update(pizzaRef, { estoque: 0 });
-                    } else {
-                        transaction.update(pizzaRef, { estoque: estoqueAtual - item.qtd });
-                    }
-                }
+        const estoqueAtual = pizzaDoc.data().estoque || 0;
+        
+        // Se a quantidade for maior que o estoque (ou estoque igual a 0)
+        if (estoqueAtual < item.qtd) {
+            const faltam = item.qtd - estoqueAtual;
+            observacoesPedido.push(`Faltam ${faltam} un. de ${item.sabor} no estoque.`);
+            // Zera o estoque para não ficar negativo
+            transaction.update(pizzaRef, { estoque: 0 });
+        } else {
+            // Abate a quantidade normalmente
+            transaction.update(pizzaRef, { estoque: estoqueAtual - item.qtd });
+        }
+    }
 
-                const agora = new Date();
-                const novoPedidoRef = doc(collection(db, "pedidos"));
-                
-                transaction.set(novoPedidoRef, {
-                    clienteId,
-                    itens: [...carrinhoAtual],
-                    valorTotal: carrinhoAtual.reduce((s,i) => s + i.subtotal, 0),
-                    status: 'Pendente',
-                    observacao: observacoesPedido.length > 0 ? observacoesPedido.join(' | ') : '',
-                    data: agora.toISOString().split('T')[0],
-                    hora: agora.toTimeString().slice(0,5),
-                    timestamp: Date.now()
-                });
-            });
-
+    const agora = new Date();
+    const novoPedidoRef = doc(collection(db, "pedidos"));
+    
+    // Grava o pedido no banco independentemente do estoque
+    transaction.set(novoPedidoRef, {
+        clienteId,
+        itens: [...carrinhoAtual],
+        valorTotal: carrinhoAtual.reduce((s,i) => s + i.subtotal, 0),
+        status: 'Pendente',
+        observacao: observacoesPedido.length > 0 ? observacoesPedido.join(' | ') : '',
+        data: agora.toISOString().split('T')[0],
+        hora: agora.toTimeString().slice(0,5),
+        timestamp: Date.now()
+    });
+});
             carrinhoAtual = [];
             document.getElementById('selectCliente').value = '';
             document.getElementById('buscaCliente').value = '';
