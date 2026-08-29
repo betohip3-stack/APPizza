@@ -1110,6 +1110,54 @@
         });
     }
 
+    window.editarEstoque = async function(id, saborAtual, estoqueAtual) {
+    const novaQtdStr = prompt(`Informe a nova quantidade em estoque para "${saborAtual}":`, estoqueAtual);
+    
+    if (novaQtdStr === null) return; // Usuário cancelou
+
+    const novaQtd = parseInt(novaQtdStr.trim());
+
+    if (isNaN(novaQtd) || novaQtd < 0) {
+        toast('Informe uma quantidade válida.', 'warning');
+        return;
+    }
+
+    try {
+        await updateDoc(doc(db, "pizzas", id), { estoque: novaQtd });
+        toast(`Estoque de "${saborAtual}" alterado para ${novaQtd}.`);
+    } catch (err) {
+        toast('Erro ao atualizar estoque no banco.', 'danger');
+    }
+};
+
+    function renderizarEstoque() {
+    const lista = document.getElementById('listaEstoque');
+    if (pizzas.length === 0) { 
+        lista.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🍕</div>Nenhuma pizza cadastrada</div>'; 
+        return; 
+    }
+    lista.innerHTML = '';
+    [...pizzas].sort((a,b) => b.estoque - a.estoque).forEach(p => {
+        const bc = p.estoque > 5 ? 'badge-success' : p.estoque > 0 ? 'badge-warning' : 'badge-danger';
+        const lb = p.estoque === 0 ? 'Sem estoque' : `${p.estoque} un.`;
+        
+        lista.innerHTML += `<div class="list-item">
+            <div class="list-item-info">
+                <div class="list-item-title">${p.sabor}</div>
+                <div class="list-item-sub">R$ ${formatBRL(p.preco)} / unidade</div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="badge ${bc}">${lb}</span>
+                <button class="cart-remove" style="color: var(--text-secondary);" title="Ajustar estoque" onclick="editarEstoque('${p.id}', '${p.sabor}', ${p.estoque})">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>`;
+    });
+}
+    
     function renderizarGrafico(vendas, gastosTot) {
         const canvas = document.getElementById('graficoLucro');
         if (meuGrafico) { meuGrafico.destroy(); meuGrafico = null; }
