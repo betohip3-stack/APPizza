@@ -834,15 +834,11 @@ window.finalizarPedido = async function() {
                     throw `Pizza "${item.sabor}" não foi encontrada!`;
                 }
 
-                const estoqueAtual = pizzaDoc.data().estoque || 0;
-                
-                if (estoqueAtual < item.qtd) {
-                    const faltam = item.qtd - estoqueAtual;
-                    observacoesPedido.push(`Faltam ${faltam} un. de ${item.sabor} no estoque.`);
-                    transaction.update(pizzaRef, { estoque: 0 });
-                } else {
-                    transaction.update(pizzaRef, { estoque: estoqueAtual - item.qtd });
-                }
+               const estoqueAtual = pizzaDoc.data().estoque;
+if (estoqueAtual < item.qtd) {
+    throw `Estoque insuficiente para "${item.sabor}".`;
+}
+transaction.update(pizzaRef, { estoque: estoqueAtual - item.qtd });
             }
 
             const agora = new Date();
